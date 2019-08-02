@@ -17,12 +17,40 @@ u8 datatemp[3];
 //回车换行符
 u8 enter[2] = {0x0d, 0x0a};
 
-/*
+/**
+*********************************************************************************************************
+*    函 数 名: esp8266_work_status_init
+*
+*    功能说明: esp8266芯片工作状态记录表初始化
+*
+*    形    参: 无
+*
+*    返 回 值: 无
+*
+*********************************************************************************************************
+*/
+ESP8266_WORK_STATUS_DEF esp8266_work_status;
+void esp8266_work_status_init(void)
+{
+    esp8266_work_status.ap_sta_mode = ESP8266_WORK_MODE_INIT;
+    esp8266_work_status.physical_equipment_id = EQUIPMENT_INIT;
+    for(u8 i=0;i<IP_STRING_LENGTH;i++) { esp8266_work_status.ip[i] = 0x00; }
+    for(u8 i=0;i<TCP_LINK_POOL;i++)
+    {
+        for(u8 j=0;i<TCP_STATUS_LENGTH;j++) { esp8266_work_status.tcp_status[i][j] = 0x00; }
+    }
+}
+
+/**
 *********************************************************************************************************
 *    函 数 名: esp8266_ack_handle_on/esp8266_ack_handle_off
+*
 *    功能说明: 使能/关闭esp8266返回字符串解析
+*
 *    形    参: 无
+*
 *    返 回 值: 无
+*
 *********************************************************************************************************
 */
 request_ack_handle handle_ack_message_send;
@@ -30,14 +58,14 @@ request_ack_handle handle_ack_message_send;
 void ESP8266_ack_handle_on(void)
 {
     //开启esp8266
-    handle_ack_message_send.flag=1;
+    handle_ack_message_send.ack_string_decode=1;
     OSMboxPost(tcp_ack_handle_start,(void*)&handle_ack_message_send);//发送消息
     delay_ms(15);//给低优先级程序CPU时间接收消息
 }
 //关闭esp8266返回字符串解析
 void ESP8266_ack_handle_off(void)
 {
-    handle_ack_message_send.flag=0;
+    handle_ack_message_send.ack_string_decode=0;
     OSMboxPost(tcp_ack_handle_start,(void*)&handle_ack_message_send);//发送消息
     delay_ms(15);//给低优先级程序CPU时间接收消息
 }
@@ -96,7 +124,7 @@ void send_cmd_json_2_ESP8266(json_t *string)
     {
         delay_ms(20);
         ack_data_recieve = OSMboxPend(tcp_ack_OK_get, 10, &os_mail_read_err);
-        if( ack_data_recieve && (ack_data_recieve->flag==TCP_ACK_OK) ) {break;}
+        if( ack_data_recieve && (ack_data_recieve->ack_code==TCP_ACK_OK) ) {break;}
     }
 }
 
@@ -159,11 +187,38 @@ void wifi_init_mode(void)
     {
         delay_ms(30);
         ack_data_recieve = OSMboxPend(tcp_ack_OK_get, 10, &os_mail_read_err);
-        if( ack_data_recieve && (ack_data_recieve->flag==TCP_ACK_IPD) )
+        
+        //接收到正确的确认消息(TCP_ACK_OK)
+        if( ack_data_recieve && (ack_data_recieve->ack_code==TCP_ACK_OK) )
+        { 
+            ack_data_recieve = NULL;    //恢复接收邮箱状态
+        }
+        
+        //接收TCP 连接消息(TCP_ACK_OK)
+        if( ack_data_recieve && (ack_data_recieve->ack_code==TCP_ACK_TCP_CONNECT) )
+        {
+            esp8266_work_status.tcp_status[ack_data_recieve->linkID][0]=ESP8266_TCP_LINK;
+            ack_data_recieve = NULL;    //恢复接收邮箱状态
+        }
+        
+        //接收TCP 断开连接消息(TCP_ACK_OK)
+        if( ack_data_recieve && (ack_data_recieve->ack_code==TCP_ACK_TCP_CLOSED) )
+        {
+            esp8266_work_status.tcp_status[ack_data_recieve->linkID][0]=ESP8266_TCP_UNLINK;
+            esp8266_work_status.tcp_status[ack_data_recieve->linkID][1]=EQUIPMENT_INIT;
+            ack_data_recieve = NULL;    //恢复接收邮箱状态
+        }
+        
+        //接收到TCP(TCP_ACK_IPD)消息--->>ack_data_recieve->data一定是Json Encode后的字符串
+        if( ack_data_recieve && (ack_data_recieve->ack_code==TCP_ACK_IPD) )
         {
             json_data = json_loads((char*)ack_data_recieve->data, JSON_ENSURE_ASCII, &json_error);
             printf("controller.c:%s\r\n", json_dumps(json_data, JSON_ENSURE_ASCII));
-            json_decref(json_data);
+            //json_decref(json_data);
+            
+            
+            
+            ack_data_recieve = NULL;    //恢复接收邮箱状态
         }
     }
     
@@ -207,6 +262,7 @@ void wifi_STA_mode(void)
 void system_software_init(void)
 {
     W25QXX_Read(datatemp, 0, 3);	//读出字符长和工作模式
+    esp8266_work_status_init();     //esp8266芯片工作状态记录表初始化
     
     if(datatemp[2]==0) wifi_init_mode();
     else if(datatemp[2]==1) wifi_AP_mode();

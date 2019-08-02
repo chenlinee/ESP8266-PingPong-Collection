@@ -185,13 +185,13 @@ u8 ack_string_check(char* ack_string, u8 length)
 *    函 数 名: esp8266_tcp_data_handle
 *
 *    功能说明: 处理与TCP连接相关的数据
-*
 *               根据ESP8266的数据手册，接受数据有如下过程。
-*               1）client端发起TCP连接，SERVER端提示:0,CONNECT（0为TCP连接的ID，最多支持5个TCP连接）
-*                                      CLIENT端提示:OK（client发起TCP连接的AT指令为（多连接模式）
+*               1）client端发起TCP连接，
+*                  SERVER端提示:0,CONNECT（0为TCP连接的ID，最多支持5个TCP连接）
+*                  CLIENT端提示:OK（client发起TCP连接的AT指令为（多连接模式）
 *               2）TCP连接发送数据，AT指令为:AT+CIPSENDEX=<link ID>,<length>(length最大为2048)
-*                                  数据发送方提示:>(接收到>后，串口开始接收数据，长度达到length或者遇到字符"\0"结束。C中"\"需转义，即"\\0")
-*                                  接收方收到数据，提示格式为:+IPD,<link ID>,<length>:<string>
+*                  数据发送方提示:>(接收到>后，串口开始接收数据，长度达到length或者遇到字符"\0"结束。C中"\"需转义，即"\\0")
+*                  接收方收到数据，提示格式为:+IPD,<link ID>,<length>:<string>
 *    形    参: 无
 *
 *    返 回 值: 无
@@ -200,42 +200,44 @@ u8 ack_string_check(char* ack_string, u8 length)
 ack_data ack_data_send;
 void ESP8266_tcp_IPDdata_handle(void)
 {
-    ack_data_send.flag=0;
+    ack_data_send.ack_code=0;
     
-    /* <!---"OK"---> */
+    /* <!-------------------------"OK"---------------------------> */
     //FINISH
     char ack_OK[] = "OK";
     if(ack_string_check(ack_OK, 2)) 
     {
-        ack_data_send.flag=TCP_ACK_OK;
+        ack_data_send.ack_code=TCP_ACK_OK;
         //返回处理结果
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
     
-    /* <!---"*,CONNECT"---> */
+    /* <!-------------------------"*,CONNECT"--------------------> */
     char ack_CONNECT[] = "*,CONNECT";
     //TODO
     if(ack_string_check(ack_CONNECT, 9))
     {
-        ack_data_send.flag=TCP_ACK_TCP_CONNECT;
+        ack_data_send.ack_code=TCP_ACK_TCP_CONNECT;
+        ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
         //返回处理结果
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
     
-    /* <!---"*,CLOSED"---> */
+    /* <!-------------------------"*,CLOSED"---------------------> */
     //TODO
     char ack_CLOSED[] = "*,CLOSED";
     if(ack_string_check(ack_CLOSED, 8))
     {
-        ack_data_send.flag=TCP_ACK_TCP_CLOSED;
+        ack_data_send.ack_code=TCP_ACK_TCP_CLOSED;
+        ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
         //返回处理结果
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
     
-    /* <!---"+IPD,*"---> */
+    /* <!-------------------------"+IPD,*"-----------------------> */
     //FINISH
     char ack_IPD[] = "+IPD,*";
     if(ack_string_check(ack_IPD, 6))
@@ -243,16 +245,17 @@ void ESP8266_tcp_IPDdata_handle(void)
         /*
         *******************************************************************************
         *   功能：解析WiFi接收的TCP相关消息
-        *         esp8266接收到TCP消息时，会返回如下格式
-        *         0123456789abcdefghij
-        *         +IPD,0,12:0123456789
-        *         0->link id
-        *         10->此次接收的字节长度
-        *         0123456789->冒号之后，为此次接收到的消息。为了调试方便，主从机之间发消息会加上\r\n两个额外字节，处理时要忽略这两个字节
+        *         - esp8266接收到TCP消息时，会返回如下格式
+        *         - 0123456789abcdefghij
+        *         - +IPD,0,12:0123456789
+        *         - 0->link id
+        *         - 10->此次接收的字节长度
+        *         - 0123456789->冒号之后，为此次接收到的消息。为了调试方便，主从机之间发消息
+        *           会加上\r\n两个额外字节，处理时要忽略这两个字节
         *******************************************************************************
         */
         u16 dataLength=0;
-        ack_data_send.flag=TCP_ACK_IPD;
+        ack_data_send.ack_code=TCP_ACK_IPD;
         ack_data_send.linkID = (u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][5] - '0');
         //获取ACK信息中的字节长度信息
         u8 i;
@@ -291,7 +294,7 @@ void wifi_recieve_data_handle(void)
         handle_ack_message_recieve = OSMboxPend(tcp_ack_handle_start,5,&os_mail_read_err);
         if( handle_ack_message_recieve )
         {
-            handle_ack_message_recieve_flag = handle_ack_message_recieve->flag;
+            handle_ack_message_recieve_flag = handle_ack_message_recieve->ack_string_decode;
         }
         
         #if SERIAL_DEBUG_MODE
