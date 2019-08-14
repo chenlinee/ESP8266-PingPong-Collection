@@ -1,6 +1,17 @@
 #ifndef __STRUCT_DEFINE_H
 #define __STRUCT_DEFINE_H
 
+#include "sys.h" 	
+#include "delay.h"
+#include "includes.h"
+#include <jansson.h>
+
+//常用函数
+void string_append(char data[], char *string);
+u16 string_2_u16( char * num_str );
+void u16_2_string(u16 num, char num_str[]);
+void work_mode_change(void);
+
 /*
 *********************************************************************************************************
 *   功能说明: 是否开启串口调试模式
@@ -60,31 +71,35 @@ typedef struct REQUEST_TCP_ACK_HANDLE_MAILBOX{
 
 /*
 *********************************************************************************************************
-*   功能说明: 此结构用于邮件通信tcp_ack_handle_start传输的数据结构
+*   功能说明: 此结构用于邮件通信tcp_ack_OK_get传输的数据结构
 *             初步处理ESP8266的返回值，传递给高优先级程序处理
 *   
-*   结    构: ack_code                              :(u8    )ESP8266返回的数据类型，值为TCP_ACK_**宏定义
+*   结    构: ack_type                              :(u8    )ESP8266返回的数据类型，值为TCP_ACK_**宏定义
 *             linkID                                :(u8    )若是TCP连接相关的ACK，则包含有link id信息(没有则不管)
 *             data[WIFI_REC_LEN]                    :(u8    )若是TCP数据(即+IPD,*)，则把有效JSON待解析字符串存入
 *
 *********************************************************************************************************
 */
 typedef struct TCP_ACK_DATA_MAILBOX{
-    u8 ack_code;
+    u8 ack_type;
     u8 linkID;
     u8 data[WIFI_REC_LEN];
 } ack_data;
 
 /*
 *********************************************************************************************************
-*                                             TCP ACK CODES
+*                                             TCP ACK TYPES
 *********************************************************************************************************
 */
+#define TCP_ACK_USELESS                 0
 #define TCP_ACK_OK                      1
 #define TCP_ACK_TCP_CONNECT             2
 #define TCP_ACK_TCP_CLOSED              3
 #define TCP_ACK_IPD                     4
 #define TCP_ACK_SEND_CONFIRM            5
+#define TCP_ACK_SEND_OK                 6       //"SEND OK"
+#define FIND_SSID_ACK_CONFIRM           7
+
 
 
 /*
@@ -92,22 +107,22 @@ typedef struct TCP_ACK_DATA_MAILBOX{
 *   功能说明: 记录芯片ESP8266的工作状态
 *   
 *   结    构: ap_sta_mode               :(u8    )ESP8266所处的工作状态
-*                                           - 0: ap_mode
-*                                           - 1: sta_mode
+*                                         - 0: ap_mode
+*                                         - 1: sta_mode
 *
 *             physical_equipment_id     :(u8    )ESP8266当前所处实际设备的地址-->PHYSICAL EQUIPMENT CODES
 *
 *             ip[IP_STRING_LENGTH]      :(u8    )ESP8266当前的IP地址
-*                                           - 0123456789abcde    f 共16位
-*                                           -"192.168.123.123"0x00
+*                                         - 0123456789abcde    f 最长16位
+*                                         -"192.168.123.123"0x00
 *
 *             tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH]         
                                         :(u8    )TCP连接资源池
-*                                           - 0   1  23456789abcdefg   h 共18位
-*                                           -0/1 0/1"192.168.123.124"0x00
-*                                           -第1个字节表示该link id连接状态
-*                                           -第二个字节表示是否获得该linkID对应的实际设备码，
-*                                            同时用于标志是否获得IP地址-->PHYSICAL EQUIPMENT CODES
+*                                         - 0   1  23456789abcdefg   h 共18位
+*                                         -0/1 0/1"192.168.123.124"0x00
+*                                         -第1个字节表示该link id连接状态
+*                                         -第二个字节表示是否获得该linkID对应的实际设备码，
+*                                          同时用于标志是否获得IP地址-->PHYSICAL EQUIPMENT CODES
 *
 *********************************************************************************************************
 */
@@ -117,8 +132,8 @@ typedef struct TCP_ACK_DATA_MAILBOX{
 typedef struct ESP8266_WORK_STATUS{
     u8 ap_sta_mode;
     u8 physical_equipment_id;
-    u8 ip[IP_STRING_LENGTH];
-    u8 tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH];
+    char ip[IP_STRING_LENGTH];
+    char tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH];
 } ESP8266_WORK_STATUS_DEF;
 
 /*
@@ -127,21 +142,33 @@ typedef struct ESP8266_WORK_STATUS{
 *********************************************************************************************************
 */
 /* <!-----------------ESP8266 WORK MODE CODES----------------> */
-#define ESP8266_WORK_MODE_INIT              0
-#define ESP8266_WORK_MODE_AP                1
-#define ESP8266_WORK_MODE_STA               2
+#define ESP8266_WORK_MODE_INIT              0u
+#define ESP8266_WORK_MODE_AP                1u
+#define ESP8266_WORK_MODE_STA               2u
 
 /* <!-----------------ESP8266 TCP LINK STATUS CODES----------> */
-#define ESP8266_TCP_UNLINK                  0
-#define ESP8266_TCP_LINK                    1
+#define ESP8266_TCP_UNLINK                  0u
+#define ESP8266_TCP_LINK                    1u
 
 /* <!-----------------PHYSICAL EQUIPMENT CODES---------------> */
-#define EQUIPMENT_INIT                      0
-#define EQUIPMENT_MASTER                    1
-#define EQUIPMENT_SLAVE_1                   2
-#define EQUIPMENT_SLAVE_2                   3
-#define EQUIPMENT_SLAVE_3                   4
-#define EQUIPMENT_SLAVE_4                   5
+#define EQUIPMENT_INIT                      0u
+#define EQUIPMENT_MASTER                    1u
+#define EQUIPMENT_SLAVE_1                   2u
+#define EQUIPMENT_SLAVE_2                   3u
+#define EQUIPMENT_SLAVE_3                   4u
+#define EQUIPMENT_SLAVE_4                   5u
+
+/*
+*********************************************************************************************************
+*                                        ESP8266 TCP LINK_ID
+*********************************************************************************************************
+*/
+#define TCP_LINKID_0                        0x01
+#define TCP_LINKID_1                        0x02
+#define TCP_LINKID_2                        0x04
+#define TCP_LINKID_3                        0x08
+#define TCP_LINKID_4                        0x10
+#define TCP_LINKID_ALL                      0x1F
 
 
 #endif

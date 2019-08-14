@@ -5,6 +5,7 @@
 #include "usart.h"
 #include "controller.h"
 #include "struct_define.h"
+#include <jansson.h>
 
 //初始化任务堆栈空间
 OS_STK START_TASK_STK[START_STK_SIZE];
@@ -15,6 +16,8 @@ OS_STK WIFIMODE_TASK_STK[WIFIMODE_STK_SIZE];
 //通知事件
 OS_EVENT * tcp_ack_handle_start;			//tcp处理邮箱事件块指针
 OS_EVENT * tcp_ack_OK_get;                  //确认是否得到OK回信
+OS_EVENT * work_mode_status_change;         //工作状态改变
+OS_EVENT * find_the_ssid;                   //检测ssid，收到WiFi特定信息后，才使用此信号量
 
 //创建开始任务
 void task_create(void)
@@ -29,6 +32,8 @@ void start_task(void *pdata)
 	pdata = pdata; 
     tcp_ack_handle_start = OSMboxCreate((void*)0);	//创建tcp消息处理邮箱
     tcp_ack_OK_get = OSMboxCreate((void*)0);
+    work_mode_status_change = OSMboxCreate((void*)0);
+    find_the_ssid = OSMboxCreate((void*)0);
   	OS_ENTER_CRITICAL();			//进入临界区(无法被中断打断)    
  	OSTaskCreate(led_task,(void *)0,(OS_STK*)&LED_TASK_STK[LED_STK_SIZE-1],LED_TASK_PRIO);						   
  	OSTaskCreate(serial_task,(void *)0,(OS_STK*)&SERIAL_TASK_STK[SERIAL_STK_SIZE-1],SERIAL_TASK_PRIO);
@@ -39,7 +44,7 @@ void start_task(void *pdata)
 
 //LED任务
 void led_task(void *pdata)
-{	
+{
     LED1 = 0;
 	while(1)
 	{

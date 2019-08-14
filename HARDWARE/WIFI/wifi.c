@@ -3,7 +3,6 @@
 #include "usart.h"
 #include "led.h"
 #include "task_create.h"
-#include <jansson.h>
 #include "struct_define.h"
 /////////////////////////////////////////////////////////////////
 //如果使用ucos,则包括下面的头文件即可.
@@ -173,9 +172,11 @@ u16 min(u16 num1, u16 num2)
 u8 ack_string_check(char* ack_string, u8 length)
 {
     length = min(length, wifi_data.WIFI_REC_DATA_LEN[wifi_data.head]&0x3fff);
+    if(!length) {return 0;}
     for(u16 t=0;t<length;t++)
     {
-        if(ack_string[t]=='*') {continue;}  //'*'表示通配符
+        if( (ack_string[t]=='*') && (wifi_data.WIFI_RX_BUF[wifi_data.head][t]>='0')
+                && (wifi_data.WIFI_RX_BUF[wifi_data.head][t]<='4')) {continue;}  //'*'表示通配符
         if( ((u8)ack_string[t])!=wifi_data.WIFI_RX_BUF[wifi_data.head][t]) {return 0;}
     }
     return 1;
@@ -198,17 +199,17 @@ u8 ack_string_check(char* ack_string, u8 length)
 *********************************************************************************************************
 */
 ack_data ack_data_send;
+u8 ack_data_find_ssid_send = 0;
 void ESP8266_tcp_IPDdata_handle(void)
 {
-    ack_data_send.ack_code=0;
+    ack_data_send.ack_type=0;
     
     /* <!-------------------------"OK"---------------------------> */
     //FINISH
     char ack_OK[] = "OK";
     if(ack_string_check(ack_OK, 2)) 
     {
-        ack_data_send.ack_code=TCP_ACK_OK;
-        //返回处理结果
+        ack_data_send.ack_type=TCP_ACK_OK;
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
@@ -218,9 +219,8 @@ void ESP8266_tcp_IPDdata_handle(void)
     //TODO
     if(ack_string_check(ack_CONNECT, 9))
     {
-        ack_data_send.ack_code=TCP_ACK_TCP_CONNECT;
+        ack_data_send.ack_type=TCP_ACK_TCP_CONNECT;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        //返回处理结果
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
@@ -230,9 +230,8 @@ void ESP8266_tcp_IPDdata_handle(void)
     char ack_CLOSED[] = "*,CLOSED";
     if(ack_string_check(ack_CLOSED, 8))
     {
-        ack_data_send.ack_code=TCP_ACK_TCP_CLOSED;
+        ack_data_send.ack_type=TCP_ACK_TCP_CLOSED;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        //返回处理结果
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
@@ -255,7 +254,7 @@ void ESP8266_tcp_IPDdata_handle(void)
         *******************************************************************************
         */
         u16 dataLength=0;
-        ack_data_send.ack_code=TCP_ACK_IPD;
+        ack_data_send.ack_type=TCP_ACK_IPD;
         ack_data_send.linkID = (u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][5] - '0');
         //获取ACK信息中的字节长度信息
         u8 i;
@@ -267,6 +266,35 @@ void ESP8266_tcp_IPDdata_handle(void)
         OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
         return;
     }
+    
+    /* <!---------------------------">"--------------------------> */
+    //FINISH
+    char ack_send_confirm[] = ">";
+    if(ack_string_check(ack_send_confirm, 1))
+    {
+        ack_data_send.ack_type = TCP_ACK_SEND_CONFIRM;
+        OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
+        return;
+    }
+    
+    /* <!---------------------------"SEND OK"--------------------------> */
+    char ack_send_sendok[] = "SEND OK";
+    if(ack_string_check(ack_send_sendok, 7))
+    {
+        ack_data_send.ack_type = TCP_ACK_SEND_OK;
+        OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
+        return;
+    }
+    
+    /* <!--------------------------"+CWLAP:("--------------------------> */
+    char ack_send_CWLAP_find_ssid[] = "+CWLAP:(";
+    if(ack_string_check(ack_send_CWLAP_find_ssid, 8))
+    {
+        ack_data_find_ssid_send = FIND_SSID_ACK_CONFIRM;
+        OSMboxPost(find_the_ssid,(void*)&ack_data_find_ssid_send);
+        return;
+    }
+    
 }
 
 /*
@@ -286,7 +314,7 @@ void wifi_recieve_data_handle(void)
     u16 len_wifi;
     u8 os_mail_read_err;
     
-    int8_t handle_ack_message_recieve_flag=-1;
+    int8_t handle_ack_message_recieve_flag=0;
     request_ack_handle *handle_ack_message_recieve;  //tcp消息处理标识符
     while(1)
     {

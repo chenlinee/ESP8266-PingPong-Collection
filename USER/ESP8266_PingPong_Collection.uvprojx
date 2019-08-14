@@ -419,6 +419,16 @@
               <FileType>5</FileType>
               <FilePath>.\Controller\struct_define.h</FilePath>
             </File>
+            <File>
+              <FileName>tcp_json_handle.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\tcp_json_handle.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp8266_common.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\esp8266_common.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -616,7 +626,7 @@
           <Files>
             <File>
               <FileName>README.md</FileName>
-              <FileType>9</FileType>
+              <FileType>5</FileType>
               <FilePath>..\README.md</FilePath>
             </File>
           </Files>
