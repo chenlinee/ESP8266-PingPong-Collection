@@ -4,6 +4,9 @@
 #include "led.h"
 #include "task_create.h"
 #include "struct_define.h"
+
+#include "ESP8266_common.h"
+#include "ESP8266_status.h"
 /////////////////////////////////////////////////////////////////
 //如果使用ucos,则包括下面的头文件即可.
 #if SYSTEM_SUPPORT_OS
@@ -13,7 +16,7 @@
 #if EN_WIFI_RX   //如果使能了接收
 //串口1中断服务程序
 //注意,读取USARTx->SR能避免莫名其妙的错误   	
-WIFI_DATA  wifi_data;     //接收缓冲
+WIFI_DATA  wifi_data;     //接收缓存队列
 //接收状态
 //bit15，	接收完成标志
 //bit14，	接收到0x0d
@@ -96,8 +99,8 @@ void USART2_IRQHandler(void)                	//串口2中断服务程序
 #endif
 	if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)  //接收中断(接收到的数据必须是0x0d 0x0a结尾)
 	{
-		Res =USART_ReceiveData(USART2);	//读取接收到的数据
-		
+		Res=USART_ReceiveData(USART2);	//读取接收到的数据
+        
 		if(((WIFI_RX_STA&0x8000)==0)&&wifi_data.count<WIFI_DATA_LEN)//接收未完成
 		{
             if(Res == 0x3E) //发送数据">"符
@@ -199,7 +202,7 @@ u8 ack_string_check(char* ack_string, u8 length)
 *********************************************************************************************************
 */
 ack_data ack_data_send;
-u8 ack_data_find_ssid_send = 0;
+u8 ack_data_find_ssid_send[2];
 void ESP8266_tcp_IPDdata_handle(void)
 {
     ack_data_send.ack_type=0;
@@ -214,6 +217,16 @@ void ESP8266_tcp_IPDdata_handle(void)
         return;
     }
     
+    /* <!------------------------"FAIL"--------------------------> */
+    //FINISH
+    char ack_FAIL[] = "FAIL";
+    if(ack_string_check(ack_FAIL, 4)) 
+    {
+        ack_data_send.ack_type=TCP_ACK_FAIL;
+        OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
+        return;
+    }
+    
     /* <!-------------------------"*,CONNECT"--------------------> */
     char ack_CONNECT[] = "*,CONNECT";
     //TODO
@@ -221,7 +234,7 @@ void ESP8266_tcp_IPDdata_handle(void)
     {
         ack_data_send.ack_type=TCP_ACK_TCP_CONNECT;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
+        TCP_ACK_TCP_CONNECT_handle(&ack_data_send, &esp8266_work_status);
         return;
     }
     
@@ -232,7 +245,7 @@ void ESP8266_tcp_IPDdata_handle(void)
     {
         ack_data_send.ack_type=TCP_ACK_TCP_CLOSED;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        OSMboxPost(tcp_ack_OK_get,(void*)&ack_data_send);
+        TCP_ACK_TCP_CLOSED_handle(&ack_data_send, &esp8266_work_status);
         return;
     }
     
@@ -290,11 +303,19 @@ void ESP8266_tcp_IPDdata_handle(void)
     char ack_send_CWLAP_find_ssid[] = "+CWLAP:(";
     if(ack_string_check(ack_send_CWLAP_find_ssid, 8))
     {
-        ack_data_find_ssid_send = FIND_SSID_ACK_CONFIRM;
-        OSMboxPost(find_the_ssid,(void*)&ack_data_find_ssid_send);
+        ack_data_find_ssid_send[0] = FIND_SSID_ACK_CONFIRM;
+        OSMboxPost(find_the_ssid,(void*)&ack_data_find_ssid_send[0]);
         return;
     }
     
+    /* <!----------------------"WIFI CONNECTED"------------------------> */
+    char ack_send_CWJAP_connect_wifi[] = "WIFI CONNECTED";
+    if(ack_string_check(ack_send_CWJAP_connect_wifi, 8))
+    {
+        ack_data_find_ssid_send[1] = TCP_ACK_WIFI_CONNECTED;
+        OSMboxPost(find_the_ssid,(void*)&ack_data_find_ssid_send[1]);
+        return;
+    }
 }
 
 /*
@@ -320,8 +341,7 @@ void wifi_recieve_data_handle(void)
     {
         //检查是否需要特殊处理esp8266字符串
         handle_ack_message_recieve = OSMboxPend(tcp_ack_handle_start,5,&os_mail_read_err);
-        if( handle_ack_message_recieve )
-        {
+        if( handle_ack_message_recieve ) {
             handle_ack_message_recieve_flag = handle_ack_message_recieve->ack_string_decode;
         }
         
@@ -340,6 +360,8 @@ void wifi_recieve_data_handle(void)
             USART_RX_STA=0;
         }
         #endif
+        
+        
         
         if(wifi_data.WIFI_REC_DATA_LEN[wifi_data.head]&0x8000)
         {
@@ -378,7 +400,7 @@ void wifi_recieve_data_handle(void)
             wifi_data.head=(wifi_data.head+1)%WIFI_DATA_LEN;
             wifi_data.count--;
         }
-        delay_ms(5);
+        delay_ms(20);
     }
 }
 

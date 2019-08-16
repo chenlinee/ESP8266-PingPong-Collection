@@ -7,9 +7,9 @@
 #include <jansson.h>
 
 //常用函数
-void string_append(char data[], char *string);
+char * string_append(char data[], char *string);
 u16 string_2_u16( char * num_str );
-void u16_2_string(u16 num, char num_str[]);
+char * u16_2_string(u16 num, char num_str[]);
 void work_mode_change(void);
 
 /*
@@ -24,7 +24,7 @@ void work_mode_change(void);
 *********************************************************************************************************
 */
 #define SERIAL_DEBUG_MODE       1       //是否开启串口调试模式
-
+#define TCP_DATA_RESEND_COUNT   3       //主动发送TCP消息失败时，最大重发次数
 
 /*
 *********************************************************************************************************
@@ -43,7 +43,7 @@ void work_mode_change(void);
 *********************************************************************************************************
 */
 #define WIFI_REC_LEN  			400  	//定义最大接收字节数 200
-#define WIFI_DATA_LEN           6       //定义最大指令缓存数
+#define WIFI_DATA_LEN           12      //定义最大指令缓存数
 typedef struct WIFI_REC_LIST
 {
     u8 head;
@@ -99,6 +99,8 @@ typedef struct TCP_ACK_DATA_MAILBOX{
 #define TCP_ACK_SEND_CONFIRM            5
 #define TCP_ACK_SEND_OK                 6       //"SEND OK"
 #define FIND_SSID_ACK_CONFIRM           7
+#define TCP_ACK_FAIL                    8
+#define TCP_ACK_WIFI_CONNECTED          9
 
 
 
@@ -117,7 +119,7 @@ typedef struct TCP_ACK_DATA_MAILBOX{
 *                                         -"192.168.123.123"0x00
 *
 *             tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH]         
-                                        :(u8    )TCP连接资源池
+*                                       :(u8    )TCP连接资源池
 *                                         - 0   1  23456789abcdefg   h 共18位
 *                                         -0/1 0/1"192.168.123.124"0x00
 *                                         -第1个字节表示该link id连接状态
@@ -151,24 +153,21 @@ typedef struct ESP8266_WORK_STATUS{
 #define ESP8266_TCP_LINK                    1u
 
 /* <!-----------------PHYSICAL EQUIPMENT CODES---------------> */
-#define EQUIPMENT_INIT                      0u
+#define MAX_EQUIPMENT                       3u
+
+#define EQUIPMENT_INIT                      0u      //不可更改, 只能加1递增
 #define EQUIPMENT_MASTER                    1u
 #define EQUIPMENT_SLAVE_1                   2u
 #define EQUIPMENT_SLAVE_2                   3u
-#define EQUIPMENT_SLAVE_3                   4u
-#define EQUIPMENT_SLAVE_4                   5u
+
 
 /*
 *********************************************************************************************************
 *                                        ESP8266 TCP LINK_ID
 *********************************************************************************************************
 */
-#define TCP_LINKID_0                        0x01
-#define TCP_LINKID_1                        0x02
-#define TCP_LINKID_2                        0x04
-#define TCP_LINKID_3                        0x08
-#define TCP_LINKID_4                        0x10
-#define TCP_LINKID_ALL                      0x1F
+#define TCP_LINKID_ALL                      5u
 
+#define TCP_SEND_ACK_DATA_CODE_NONE         64u
 
 #endif

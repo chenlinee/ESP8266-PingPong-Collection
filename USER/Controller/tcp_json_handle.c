@@ -2,6 +2,7 @@
 #include "esp8266_common.h"
 #include "w25qxx.h"
 #include <jansson.h>
+#include "work_group_status.h"
 
 //响应信息
 u8 send_ack_message_above_128(u8 dataCode, char *message, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
@@ -27,20 +28,21 @@ u8 send_ack_message_above_128(u8 dataCode, char *message, u8 linkId, ESP8266_WOR
 }
 
 //拼接字符串
-void string_append(char data[], char *string)
+char * string_append(char data[], char *string)
 {
     u8 data_end = 0;
     for(;data[data_end];data_end++);
     for(u8 i=0;*(string+i);i++) { data[data_end++] = *(string+i);}
     data[data_end]=0;
+    return data;
 }
 
 //初始化为AP模式
-void ap_sta_mode_set_0(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+void ap_mode_set_0(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
 {
     json_t *data = json_object_get(json_data, "data");
-    u8 physical_equipment_id = string_2_u16((char *)json_string_value(json_object_get(data, "physical_equipment_id")));
-    esp8266_work_status->physical_equipment_id = physical_equipment_id;
+    //更新本机状态表
+    esp8266_work_status->physical_equipment_id = string_2_u16((char *)json_string_value(json_object_get(data, "physical_equipment_id")));
     esp8266_work_status->ip[0]=0;
     string_append(esp8266_work_status->ip, (char *)json_string_value(json_object_get(data, "ip")));
     //发送响应
@@ -49,7 +51,11 @@ void ap_sta_mode_set_0(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *es
     //关闭所有TCP连接
     esp8266_tcp_link_close(TCP_LINKID_ALL, esp8266_work_status);
     
-    //构建AP模式AT指令
+    /*
+    ****************************************************************************************************
+    *    写入WiFi芯片工作指令
+    ****************************************************************************************************
+    */
     json_t *ap_cmd = json_array();
     //关闭回显
     #if SERIAL_DEBUG_MODE
@@ -58,9 +64,9 @@ void ap_sta_mode_set_0(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *es
     json_array_append_new(ap_cmd, json_string("ATE0"));
     #endif
     //设置工作模式
-    json_array_append_new(ap_cmd, json_string("AT+CWMODE_CUR=2"));
+    json_array_append_new(ap_cmd, json_string("AT+CWMODE_DEF=2"));
     //AT+CWSAP_CUR=设置WiFi名称和密码
-    char cmd_string[128] = "AT+CWSAP_CUR=\"";
+    char cmd_string[128] = "AT+CWSAP_DEF=\"";
     string_append(cmd_string, (char *)json_string_value(json_object_get(data, "ssid")));
     string_append(cmd_string, "\",\"");
     string_append(cmd_string, (char *)json_string_value(json_object_get(data, "passwd")));
@@ -84,118 +90,119 @@ void ap_sta_mode_set_0(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *es
     cmd_string[0]=0;
     string_append(cmd_string, "AT+CIPSTO=300");
     json_array_append_new(ap_cmd, json_string(cmd_string));
+    //写入Flash && 改变工作状态
+    work_mode_init_AT_cmd_write_2_flash(ap_cmd, ESP8266_WORK_MODE_AP);
+    /*****************************************************************************************************/
     
     
-    //写入Flash外存
-    char *ap_mode_at_string = json_dumps(ap_cmd, JSON_ENSURE_ASCII);
-    u16 size = 0;
-    for(size=0;*(ap_mode_at_string+size);size++);
-    size++;
-    u8 size_8[3];
-    size_8[0]=(u8)(size>>8);
-    size_8[1]=(u8)size;
-    size_8[2]=ESP8266_WORK_MODE_AP;
-    
-    W25QXX_Write((u8*)(size_8+2),2,1);
-    W25QXX_Write((u8*)size_8,4096,2);
-    W25QXX_Write((u8*)ap_mode_at_string,4096+100,size);
+    //更新work_group数据
+    work_group_network_update((char *)json_string_value(json_object_get(data, "ssid")), (char *)json_string_value(json_object_get(data, "passwd")));
+    equipment_identification_set(esp8266_work_status->physical_equipment_id);
+    update_work_group_equipment_x_ip(esp8266_work_status->physical_equipment_id, esp8266_work_status->ip);
     
     //销毁Json数据
-    free(ap_mode_at_string);
     json_decref(data);
     json_decref(ap_cmd);
-    
-    //改变工作状态
-    work_mode_change();
 }
 
-void ap_sta_mode_set_1(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+void sta_mode_set_1(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
 {
     json_t *data = json_object_get(json_data, "data");
-    u8 physical_equipment_id = string_2_u16((char *)json_string_value(json_object_get(data, "physical_equipment_id")));
-    esp8266_work_status->physical_equipment_id = physical_equipment_id;
+    //更新本机状态表
+    esp8266_work_status->physical_equipment_id = string_2_u16((char *)json_string_value(json_object_get(data, "physical_equipment_id")));
     esp8266_work_status->ip[0]=0;
     string_append(esp8266_work_status->ip, (char *)json_string_value(json_object_get(data, "ip")));
+    
     //发送响应
     send_ack_message_above_128(128, "data recieved", linkId, esp8266_work_status);
     
     //关闭所有TCP连接
     esp8266_tcp_link_close(TCP_LINKID_ALL, esp8266_work_status);
     
-    //构建AP模式AT指令
-    json_t *sta_cmd = json_array();
+    /*
+    ****************************************************************************************************
+    *    写入WiFi芯片工作指令
+    ****************************************************************************************************
+    */
+    json_t *sta_cmd = json_object(), *sta_cmd_part1 = json_array(), *sta_cmd_part2 = json_array();
     //关闭回显
     #if SERIAL_DEBUG_MODE
-    json_array_append_new(sta_cmd, json_string("ATE1"));
+    json_array_append_new(sta_cmd_part1, json_string("ATE1"));
     #else
-    json_array_append_new(sta_cmd, json_string("ATE0"));
+    json_array_append_new(sta_cmd_part1, json_string("ATE0"));
     #endif
     //设置工作模式
-    json_array_append_new(sta_cmd, json_string("AT+CWMODE_CUR=1"));
-    //AT+CWJAP_CUR=设置master WiFi的名称和密码
-    char cmd_string[128] = "AT+CWJAP_CUR=\"";
-    string_append(cmd_string, (char *)json_string_value(json_object_get(data, "ssid")));
-    string_append(cmd_string, "\",\"");
-    string_append(cmd_string, (char *)json_string_value(json_object_get(data, "passwd")));
-    string_append(cmd_string, "\"");
-    json_array_append_new(sta_cmd, json_string(cmd_string));
+    json_array_append_new(sta_cmd_part1, json_string("AT+CWMODE_DEF=1"));
+    json_array_append_new(sta_cmd_part1, json_string("AT+CWLAPOPT=1,2"));
+    json_array_append_new(sta_cmd_part1, json_string("AT+CWAUTOCONN=0"));
     //设置本机IP地址
-    cmd_string[0]=0;
-    string_append(cmd_string, "AT+CIPSTA_CUR=\"");
+    char cmd_string[128] = "";
+    string_append(cmd_string, "AT+CIPSTA_DEF=\"");
     string_append(cmd_string, (char *)json_string_value(json_object_get(data, "ip")));
     string_append(cmd_string, "\"");
-    json_array_append_new(sta_cmd, json_string(cmd_string));
+    json_array_append_new(sta_cmd_part1, json_string(cmd_string));
+    json_object_set_new(sta_cmd, "sta_cmd_part1", sta_cmd_part1);
+    
     //设置多连接
     cmd_string[0]=0;
     string_append(cmd_string, "AT+CIPMUX=1");
-    json_array_append_new(sta_cmd, json_string(cmd_string));
+    json_array_append_new(sta_cmd_part2, json_string(cmd_string));
     //设置开启TCP服务器
     cmd_string[0]=0;
     string_append(cmd_string, "AT+CIPSERVER=1,1037");
-    json_array_append_new(sta_cmd, json_string(cmd_string));
+    json_array_append_new(sta_cmd_part2, json_string(cmd_string));
     //设置超时时间
     cmd_string[0]=0;
     string_append(cmd_string, "AT+CIPSTO=300");
-    json_array_append_new(sta_cmd, json_string(cmd_string));
+    json_array_append_new(sta_cmd_part2, json_string(cmd_string));
+    json_object_set_new(sta_cmd, "sta_cmd_part2", sta_cmd_part2);
+    //写入Flash && 改变工作状态
+    work_mode_init_AT_cmd_write_2_flash(sta_cmd, ESP8266_WORK_MODE_STA);
+    /*****************************************************************************************************/
     
     
-    json_t *sta_data = json_object();
-    //添加sta_cmd到sta_data
-    json_object_set_new(sta_data, "sta_cmd", sta_cmd);
-    //设置master主机的IP地址
-    cmd_string[0]=0;
-    string_append(cmd_string, (char *)json_string_value(json_object_get(data, "master_ip")));
-    json_object_set_new(sta_data, "master_ip", json_string(cmd_string));
-    //设置master主机的ssid, 用于扫描
-    cmd_string[0]=0;
-    string_append(cmd_string, (char *)json_string_value(json_object_get(data, "ssid")));
-    json_object_set_new(sta_data, "master_ssid", json_string(cmd_string));
-    
-    
-    //写入Flash外存
-    char *sta_mode_at_string = json_dumps(sta_data, JSON_ENSURE_ASCII);
-    u16 size = 0;
-    for(size=0;*(sta_mode_at_string+size);size++);
-    size++;
-    u8 size_8[3];
-    size_8[0]=(u8)(size>>8);
-    size_8[1]=(u8)size;
-    size_8[2]=ESP8266_WORK_MODE_STA;
-    
-    W25QXX_Write((u8*)(size_8+2),2,1);
-    W25QXX_Write((u8*)size_8,4096*2,2);
-    W25QXX_Write((u8*)sta_mode_at_string,4096*2+100,size);
+    //更新work_group数据
+    work_group_network_update((char *)json_string_value(json_object_get(data, "ssid")), (char *)json_string_value(json_object_get(data, "passwd")));
+    equipment_identification_set(esp8266_work_status->physical_equipment_id);
+    update_work_group_equipment_x_ip(EQUIPMENT_MASTER, (char *)json_string_value(json_object_get(data, "master_ip")));
+    update_work_group_equipment_x_ip(esp8266_work_status->physical_equipment_id, esp8266_work_status->ip);
     
     //销毁Json数据
-    free(sta_mode_at_string);
     json_decref(data);
+    json_decref(sta_cmd_part1);
+    json_decref(sta_cmd_part2);
     json_decref(sta_cmd);
-    json_decref(sta_data);
-    
-    //改变工作状态
-    work_mode_change();
 }
 
+void ack_register_2(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+{
+    u8 equipment_code = string_2_u16((char *)json_string_value(json_object_get(json_data, "id")));
+    json_t *data = json_object_get(json_data, "data");
+    const char *ip = json_string_value(json_object_get(data, "ip"));
+    update_work_group_equipment_x_ip(equipment_code, (char *)ip);
+    
+    //发送响应
+    send_ack_message_above_128(193, "register success", linkId, esp8266_work_status);
+    
+    json_decref(data);
+}
+void ack_register_130(json_t *json_data, u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+{
+    json_t *data = json_object_get(json_data, "data");
+    u8 equipment_code = string_2_u16((char *)json_string_value(json_object_get(data, "id")));
+    char ip[16] ="";
+    
+    char ack_message[64] = "this id has registered, ip is \"";
+    string_append(ack_message, get_work_group_equipment_x_ip(equipment_code, ip));
+    get_work_group_equipment_x_ip(equipment_code, ip);
+    string_append(ack_message, "\"");
+    
+    //发送响应
+    send_ack_message_above_128(194, ack_message, linkId, esp8266_work_status);
+    
+    esp8266_tcp_link_close(linkId, esp8266_work_status);
+    json_decref(data);
+}
 
 
 /**
@@ -234,16 +241,27 @@ u8 TCP_ACK_IPD_handle(ack_data *ack_data_recieve, ESP8266_WORK_STATUS_DEF *esp82
     switch(dataCode) 
     {
         case 0 :
-            ap_sta_mode_set_0(json_data, linkId, esp8266_work_status);
+            ap_mode_set_0(json_data, linkId, esp8266_work_status);
             return_code = 0;
             break;
         case 1 :
-            ap_sta_mode_set_1(json_data, linkId, esp8266_work_status);
+            sta_mode_set_1(json_data, linkId, esp8266_work_status);
             return_code = 1;
+            break;
+        case 2 :
+            ack_register_2(json_data, linkId, esp8266_work_status);
+            return_code = 2;
             break;
         case 129 :
             send_ack_message_above_128(192, "init succeed, work on AP master mode", linkId, esp8266_work_status);
             return_code = 129;
+            break;
+        case 130 :
+            ack_register_130(json_data, linkId, esp8266_work_status);
+            return_code = 130;
+            break;
+        case 193 :
+            return_code = 193;
             break;
         default :
             send_ack_message_above_128(254, "unknown dataCode", linkId, esp8266_work_status);
