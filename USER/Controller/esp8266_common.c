@@ -6,6 +6,7 @@
 #include "error_handle.h"
 #include "tcp_json_handle.h"
 #include "work_group_status.h"
+#include "esp8266_work_status.h"
 
 //回车换行符
 u8 enter[2] = {0x0d, 0x0a};
@@ -104,7 +105,6 @@ void send_at_cmd_json_stream_STA(void)
 {
     u32 addr = 0x1000*ESP8266_WORK_MODE_STA;
     
-    ESP8266_ack_handle_on();
     //读出flash数据
     u8 lengthTemp[2];
     W25QXX_Read(lengthTemp,addr,2);
@@ -187,11 +187,11 @@ void send_at_cmd_json_stream_STA(void)
             delay_ms(100);
             ack_data_recieve = OSMboxPend(tcp_ack_OK_get, 10, &os_mail_read_err);
             ack_data_find_ssid_recieve = OSMboxPend(find_the_ssid, 10, &os_mail_read_err);
+            
             if( ack_data_find_ssid_recieve && ( (*ack_data_find_ssid_recieve)==TCP_ACK_WIFI_CONNECTED) ) 
             {
                 *ack_data_find_ssid_recieve = 0;
                 ssid_find_flag = 1;
-                continue;
             }
             if( ack_data_recieve && (ack_data_recieve->ack_type==TCP_ACK_OK) ) 
             {
@@ -275,7 +275,6 @@ void send_at_cmd_json_stream(u8 work_mode)
         if(json_is_array(AT_stream_data))
         {
             cmd_quantity = json_array_size(AT_stream_data);
-            ESP8266_ack_handle_on();
             for(u8 i=0; i<cmd_quantity; i++)
             {
                 cmd = json_array_get(AT_stream_data, i);            //获取一条指令
@@ -353,12 +352,12 @@ u8 send_data_2_tcp_link(json_t *data, u8 linkId)
 *    返 回 值: ESP8266的linkId, 或者找不到IP的错误返回值(5)
 *********************************************************************************************************
 */
-u8 establish_tcp_link(char *ipaddr, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+u8 establish_tcp_link(char *ipaddr)
 {
     u8 linkId = 5, i;
     for(i=4;i!=0xff;i--)
     {
-        if( !esp8266_work_status->tcp_status[i][0] ) {break;}
+        if( !get_esp8266_work_status_tcp(i) ) {break;}
     }
     if(i==0xff) {return linkId;}
     linkId = i;
@@ -376,7 +375,7 @@ u8 establish_tcp_link(char *ipaddr, ESP8266_WORK_STATUS_DEF *esp8266_work_status
         for(u8 t=0;t<10;t++)  
         {
             delay_ms(40);
-            if( esp8266_work_status->tcp_status[linkId][0] ) {return linkId;}
+            if( get_esp8266_work_status_tcp(linkId) ) {return linkId;}
         }
     }
     
@@ -397,13 +396,13 @@ u8 establish_tcp_link(char *ipaddr, ESP8266_WORK_STATUS_DEF *esp8266_work_status
 *    返 回 值: bool
 *********************************************************************************************************
 */
-u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_dataCode, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_dataCode)
 {
     json_t *full_data = json_object();
     
     //"id"
     char num_2_str[6];
-    u16_2_string(esp8266_work_status->physical_equipment_id, num_2_str);
+    u16_2_string(get_esp8266_work_status_physical_equipment_id(), num_2_str);
     json_object_set_new(full_data, "id", json_string(num_2_str));
     //"dataCode"
     json_object_set_new(full_data, "dataCode", json_string(u16_2_string(dataCode, num_2_str)));
@@ -415,7 +414,7 @@ u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_da
     
     //建立TCP连接
     ESP8266_ack_handle_on();
-    u8 linkId = establish_tcp_link(get_work_group_equipment_x_ip(equipment_code, ip), esp8266_work_status);
+    u8 linkId = establish_tcp_link(get_work_group_equipment_x_ip(equipment_code, ip));
     if(linkId==5) {return 0;}
     
     //向该linkId发送数据
@@ -433,7 +432,7 @@ u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_da
             if( ack_data_recieve && (ack_data_recieve->ack_type==TCP_ACK_IPD) ) 
             {
                 //检查返回值
-                if(  TCP_ACK_IPD_handle(ack_data_recieve, esp8266_work_status) == ack_dataCode )
+                if(  TCP_ACK_IPD_handle(ack_data_recieve) == ack_dataCode )
                 {
                     is_success = 1;
                     break;
@@ -443,7 +442,7 @@ u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_da
         if(is_success) {break;}
     }
     
-    esp8266_tcp_link_close(linkId, esp8266_work_status);
+    esp8266_tcp_link_close(linkId);
 
     json_decref(full_data);
     if(is_success) {return 1;}
@@ -461,7 +460,7 @@ u8 send_data_2_equipment(json_t *data, u8 equipment_code, u8 dataCode, u8 ack_da
 *    返 回 值: 无
 *********************************************************************************************************
 */
-void esp8266_tcp_link_close_send_cmd(u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+void esp8266_tcp_link_close_send_cmd(u8 linkId)
 {
     char at_cipclose[] = "AT+CIPCLOSE=*";
     
@@ -470,83 +469,59 @@ void esp8266_tcp_link_close_send_cmd(u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266
     for(u8 t=0;t<10;t++)
     {
         delay_ms(10);
-        if( !esp8266_work_status->tcp_status[linkId][0] ) { break;}
+        if( !get_esp8266_work_status_tcp(linkId) ) { break;}
     }
 }
-void esp8266_tcp_link_close(u8 linkId, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
+void esp8266_tcp_link_close(u8 linkId)
 {
     switch(linkId)
     {
         case 0 :
-            while(esp8266_work_status->tcp_status[linkId][0]) 
+            while(get_esp8266_work_status_tcp(linkId)) 
             {
-                esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                esp8266_tcp_link_close_send_cmd(linkId);
                 delay_ms(20);
             }
             break;
         case 1 :
-            while(esp8266_work_status->tcp_status[linkId][0]) 
+            while(get_esp8266_work_status_tcp(linkId)) 
             {
-                esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                esp8266_tcp_link_close_send_cmd(linkId);
                 delay_ms(20);
             }
             break;
         case 2 :
-            while(esp8266_work_status->tcp_status[linkId][0]) 
+            while(get_esp8266_work_status_tcp(linkId)) 
             {
-                esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                esp8266_tcp_link_close_send_cmd(linkId);
                 delay_ms(20);
             }
             break;
         case 3 :
-            while(esp8266_work_status->tcp_status[linkId][0]) 
+            while(get_esp8266_work_status_tcp(linkId)) 
             {
-                esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                esp8266_tcp_link_close_send_cmd(linkId);
                 delay_ms(20);
             }
             break;
         case 4 :
-            while(esp8266_work_status->tcp_status[linkId][0]) 
+            while(get_esp8266_work_status_tcp(linkId)) 
             {
-                esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                esp8266_tcp_link_close_send_cmd(linkId);
                 delay_ms(20);
             }
             break;
         case TCP_LINKID_ALL :
             for(u8 i=0;i<TCP_LINKID_ALL;i++) 
             {
-                while(esp8266_work_status->tcp_status[linkId][0]) 
+                while(get_esp8266_work_status_tcp(i)) 
                 {
-                    esp8266_tcp_link_close_send_cmd(linkId, esp8266_work_status);
+                    esp8266_tcp_link_close_send_cmd(i);
                     delay_ms(20);
                 }
             }
             break;
     }        
-}
-
-/*
-*********************************************************************************************************
-*    函 数 名:  TCP_ACK_TCP_CONNECT_handle
-*               TCP_ACK_TCP_CLOSED_handle
-*
-*    功能说明:  ESP8266返回TCP连接建立字符串时，更新ESP8266的工作状态记录表
-*               ESP8266返回TCP连接关闭字符串时，更新ESP8266的工作状态记录表
-*
-*    形    参: ack_data *ack_data_recieve
-*
-*    返 回 值: 无
-*********************************************************************************************************
-*/
-void TCP_ACK_TCP_CLOSED_handle(ack_data *ack_data_recieve, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
-{
-    esp8266_work_status->tcp_status[ack_data_recieve->linkID][0]=ESP8266_TCP_UNLINK;
-    esp8266_work_status->tcp_status[ack_data_recieve->linkID][1]=EQUIPMENT_INIT;
-}
-
-void TCP_ACK_TCP_CONNECT_handle(ack_data *ack_data_recieve, ESP8266_WORK_STATUS_DEF *esp8266_work_status)
-{
-    esp8266_work_status->tcp_status[ack_data_recieve->linkID][0]=ESP8266_TCP_LINK;
 }
 
 /*

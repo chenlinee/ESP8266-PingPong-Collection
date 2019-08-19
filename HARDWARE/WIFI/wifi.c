@@ -6,7 +6,7 @@
 #include "struct_define.h"
 
 #include "ESP8266_common.h"
-#include "ESP8266_status.h"
+#include "esp8266_work_status.h"
 /////////////////////////////////////////////////////////////////
 //如果使用ucos,则包括下面的头文件即可.
 #if SYSTEM_SUPPORT_OS
@@ -234,7 +234,7 @@ void ESP8266_tcp_IPDdata_handle(void)
     {
         ack_data_send.ack_type=TCP_ACK_TCP_CONNECT;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        TCP_ACK_TCP_CONNECT_handle(&ack_data_send, &esp8266_work_status);
+        TCP_ACK_TCP_CONNECT_handle(&ack_data_send);
         return;
     }
     
@@ -245,7 +245,7 @@ void ESP8266_tcp_IPDdata_handle(void)
     {
         ack_data_send.ack_type=TCP_ACK_TCP_CLOSED;
         ack_data_send.linkID=(u8)(wifi_data.WIFI_RX_BUF[wifi_data.head][0] - '0');
-        TCP_ACK_TCP_CLOSED_handle(&ack_data_send, &esp8266_work_status);
+        TCP_ACK_TCP_CLOSED_handle(&ack_data_send);
         return;
     }
     

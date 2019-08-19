@@ -8,8 +8,8 @@
 #include "usart.h"
 #include "wifi.h"
 #include "w25qxx.h"
-#include "controller.h"
 
+#include "fan.h"
 
 
 /************************************************
@@ -26,6 +26,10 @@ u8 hardware_init(void)
 	uart_init(115200);	 //串口初始化为115200
  	LED_Init();			     //LED端口初始化
 	KEY_Init();          //初始化与按键连接的硬件接口
+    
+    FAN_Init();
+    
+    
     W25QXX_Init();
     if(W25QXX_ReadID()!=W25Q16) return 0;
     wifi_init();

@@ -1,88 +1,16 @@
 #include "delay.h"
-#include "controller.h"
-#include "key.h"
+#include "work_group_init.h"
 #include "w25qxx.h"
-#include "wifi.h"
-#include "error_handle.h"
-#include "task_create.h"
+//#include "wifi.h"
+//#include "error_handle.h"
+//#include "task_create.h"
 #include "struct_define.h"
 #include "esp8266_common.h"
 #include "tcp_json_handle.h"
 #include "work_group_status.h"
-
-#include "ESP8266_status.h"
-
-/**
-*********************************************************************************************************
-*    函 数 名: esp8266_work_status_init
-*
-*    功能说明: esp8266芯片工作状态记录表初始化
-*
-*    形    参: 无
-*
-*    返 回 值: 无
-*
-*********************************************************************************************************
-*/
-ESP8266_WORK_STATUS_DEF esp8266_work_status;
-void esp8266_work_status_init(void)
-{
-    esp8266_work_status.ap_sta_mode = ESP8266_WORK_MODE_INIT;
-    esp8266_work_status.physical_equipment_id = EQUIPMENT_INIT;
-    for(u8 i=0;i<IP_STRING_LENGTH;i++) { esp8266_work_status.ip[i] = 0x00; }
-    for(u8 i=0;i<TCP_LINK_POOL;i++)
-    {
-        for(u8 j=0;j<TCP_STATUS_LENGTH;j++) { esp8266_work_status.tcp_status[i][j] = 0x00; }
-    }
-}
-void get_esp8266_work_status_from_work_group_data(u8 esp826_work_mode_code)
-{
-    esp8266_work_status.ap_sta_mode = esp826_work_mode_code;
-    esp8266_work_status.physical_equipment_id = equipment_identification_get();
-    get_work_group_equipment_x_ip(esp8266_work_status.physical_equipment_id, esp8266_work_status.ip);
-    //关闭所有TCP连接
-    esp8266_tcp_link_close(TCP_LINKID_ALL, &esp8266_work_status);
-}
-
-/**
-*********************************************************************************************************
-*    函 数 名: check_work_mode_change
-*
-*    功能说明: 检查是否需要改变工作状态
-*
-*    形    参: 无
-*
-*    返 回 值: bool
-*
-*********************************************************************************************************
-*/
-u8 check_work_mode_change()
-{
-    u8 *work_mode_change_recieve, *key_recieve;
-    u8 os_mail_read_err;
-    work_mode_change_recieve = NULL;
-    
-    key_recieve=OSMboxPend(key_detect, 10, &os_mail_read_err);
-    if(key_recieve && ((*key_recieve)==KEY0_PRES) )
-    {
-        *key_recieve = 0;
-        u8 work_mode[1];
-        work_mode[0] = ESP8266_WORK_MODE_INIT;
-        W25QXX_Write((u8*)work_mode,2,1);
-        work_mode_change();
-        
-        delay_ms(50);
-    }
-    
-    work_mode_change_recieve = OSMboxPend(work_mode_status_change, 10, &os_mail_read_err);
-    if(work_mode_change_recieve && (*work_mode_change_recieve)) 
-    {
-        *work_mode_change_recieve = 0;
-        ESP8266_ack_handle_off();
-        return 1;
-    }
-    return 0;
-}
+#include "work_group_online_status.h"
+#include "esp8266_work_status.h"
+#include "collection.h"
 
 /**
 *********************************************************************************************************
@@ -96,55 +24,56 @@ u8 check_work_mode_change()
 *
 *********************************************************************************************************
 */
-void slave_register(void)
+u8 slave_register(void)
 {
+    u8 success_flag=0;
     json_t *data=json_object();
     
-    json_object_set_new(data, "ip", json_string(esp8266_work_status.ip));
+    char ip[16];
+    json_object_set_new(data, "ip", json_string(get_esp8266_work_status_ip(ip)));
     
-    send_data_2_equipment(data, EQUIPMENT_MASTER, 2, 193, &esp8266_work_status);
+    if(send_data_2_equipment(data, EQUIPMENT_MASTER, 2, 193)) {success_flag=1;}
     json_decref(data);
+    
+    return success_flag;
 }
 
 /**
 *********************************************************************************************************
-*    函 数 名: handle_TCP_data_loop_task
+*    函 数 名: send_ready_meesage_2_slave
 *
-*    功能说明: 处于长时间工作状态时，用这个函数循环接收TCP数据
+*    功能说明: 主机确定网络组在线设备准备完成之后，通知所有从机
 *
-*    形    参: 无
+*    形    参: void
 *
 *    返 回 值: bool
 *
 *********************************************************************************************************
 */
-void handle_TCP_data_loop_task(void)
+u8 send_ready_meesage_2_slave(void)
 {
-    ESP8266_ack_handle_on();//使能ESP8266字符串解析处理
-    u8 os_mail_read_err;
-    ack_data *ack_data_recieve;
-    while(1)
+    u8 success_flag=0;
+    json_t *data[MAX_EQUIPMENT-1];
+    for(u8 equipment_code=EQUIPMENT_SLAVE_1;equipment_code<=MAX_EQUIPMENT;equipment_code++)
     {
-        delay_ms(20);
-        ack_data_recieve = OSMboxPend(tcp_ack_OK_get, 10, &os_mail_read_err);
-        
-        //接收到正确的确认消息(TCP_ACK_OK)
-        if( ack_data_recieve && (ack_data_recieve->ack_type==TCP_ACK_OK) ) {ack_data_recieve = NULL;}
-        
-        //接收到TCP(TCP_ACK_IPD)消息--->>ack_data_recieve->data一定是Json Encode后的字符串
-        if( ack_data_recieve && (ack_data_recieve->ack_type==TCP_ACK_IPD) )
-        {
-            TCP_ACK_IPD_handle(ack_data_recieve, &esp8266_work_status);
-            ack_data_recieve = NULL;    //恢复接收邮箱状态
-        }
-        
-        if(check_work_mode_change()) 
-        {
-            ESP8266_ack_handle_off();
-            break;
-        }
+        data[equipment_code-2]=json_object();
+        json_object_set_new(data[equipment_code-2], "message", json_string("work group online init success"));
     }
+    
+    for(u8 equipment_code=EQUIPMENT_SLAVE_1;equipment_code<=MAX_EQUIPMENT;equipment_code++)
+    {
+        if(send_data_2_equipment(data[equipment_code-2], equipment_code, 131, 196)) { success_flag++;}
+    }
+    
+    for(u8 equipment_code=EQUIPMENT_SLAVE_1;equipment_code<=MAX_EQUIPMENT;equipment_code++)
+    {
+        json_decref(data[equipment_code-2]);
+    }
+    
+    if(success_flag==MAX_EQUIPMENT-1) {return 1;}
+    else {return 0;}
 }
+
 
 /*<--------------------(  主要控制程序 )----------------------->
 *<---------------------(  wifi_init_mode()  )------------------>
@@ -165,10 +94,38 @@ void wifi_AP_mode(void)
     //设备状态恢复
     EQUIPMENT_QUERY_KEY_init();
     get_esp8266_work_status_from_work_group_data(ESP8266_WORK_MODE_AP);
+    work_group_online_init();
+    
+    //从机的IP可能会改变，先初始化，等从机注册之后再写入
+    for(u8 equipment_code=EQUIPMENT_SLAVE_1;equipment_code<MAX_EQUIPMENT+1;equipment_code++)
+    {
+        update_work_group_equipment_x_ip(equipment_code, "");
+    }
+    
     //硬件初始化
+    ESP8266_ack_handle_on();
     send_at_cmd_json_stream(ESP8266_WORK_MODE_AP);
-    //工作状态
+    
+    //本机准备就绪
+    set_work_group_online_equipment_status(get_esp8266_work_status_physical_equipment_id(), READY);
+    
+    //打印测试
+    esp8266_work_status_printf();
+    work_group_online_status_printf();
+    
+    
+    //处理TCP消息
     handle_TCP_data_loop_task();
+    
+    if(check_work_group_online_status()==READY)
+    {
+        //通知所有从机，网络组准备就绪
+        if(send_ready_meesage_2_slave())
+        {
+            //进入收集模式
+            collection_test();
+        }
+    }
 }
 
 /*
@@ -184,16 +141,32 @@ void wifi_STA_mode(void)
     //设备状态恢复
     EQUIPMENT_QUERY_KEY_init();
     get_esp8266_work_status_from_work_group_data(ESP8266_WORK_MODE_STA);
+    work_group_online_init();
     //硬件初始化
+    ESP8266_ack_handle_on();
     send_at_cmd_json_stream(ESP8266_WORK_MODE_STA);
     
-    //test
-    work_group_printf();
-    
     //向主机发起注册
-    slave_register();
-    //工作状态
+    while(1)
+    {
+        if(slave_register())
+        {
+            set_work_group_online_equipment_status(get_esp8266_work_status_physical_equipment_id(), READY);
+            break;
+        }
+        delay_ms(500);
+    }
+    
+    //打印测试
+    esp8266_work_status_printf();
+    work_group_online_status_printf();
+    
+    //Json数据处理
+    ESP8266_ack_handle_on();//使能ESP8266字符串解析处理
     handle_TCP_data_loop_task();
+    
+    if(check_work_group_online_status()==READY) { collection_test(); }
+    
 }
 
 
@@ -210,7 +183,8 @@ void wifi_STA_mode(void)
 */
 void wifi_init_mode(void)
 {
-    work_group_init();              //工作组初始化
+    work_group_status_init();              //工作组初始化
+    ESP8266_ack_handle_on();
     send_at_cmd_json_stream(ESP8266_WORK_MODE_INIT);
     /*
     **********************************************************************************
@@ -230,7 +204,7 @@ void wifi_init_mode(void)
 *    返 回 值: 无
 *********************************************************************************************************
 */
-void system_software_init(void)
+void work_group_connection_init(void)
 {
     esp8266_work_status_init();     //esp8266芯片工作状态记录表初始化
     u8 datatemp[1];

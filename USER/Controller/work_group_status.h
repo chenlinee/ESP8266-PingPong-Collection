@@ -9,7 +9,7 @@
 void EQUIPMENT_QUERY_KEY_init(void);
 
 //初始化工作组记录表
-void work_group_init(void);
+void work_group_status_init(void);
 
 //更新和获取"network_data"
 void work_group_network_update(char *ssid, char *passwd);
@@ -23,7 +23,6 @@ u8 equipment_identification_get(void);
 
 //更新网络组的某台设备的IP地址
 void update_work_group_equipment_x_ip(u8 equipment_code, char *ip);
-
 //获取网络组的某台设备的ip地址
 char* get_work_group_equipment_x_ip(u8 equipment_code, char ip[]);
 

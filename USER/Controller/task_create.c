@@ -4,7 +4,7 @@
 #include "delay.h"
 #include "wifi.h"
 #include "usart.h"
-#include "controller.h"
+#include "work_group_init.h"
 #include "struct_define.h"
 #include <jansson.h>
 
@@ -97,7 +97,7 @@ void serial_task(void *pdata)
 //WiFi工作模式选择程序
 void wifiMode_task(void *pdata)
 {
-    system_software_init();
+    work_group_connection_init();
     while(1)
     {
         LED1=!LED1;

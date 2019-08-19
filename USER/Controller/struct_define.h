@@ -103,41 +103,6 @@ typedef struct TCP_ACK_DATA_MAILBOX{
 #define TCP_ACK_WIFI_CONNECTED          9
 
 
-
-/*
-*********************************************************************************************************
-*   功能说明: 记录芯片ESP8266的工作状态
-*   
-*   结    构: ap_sta_mode               :(u8    )ESP8266所处的工作状态
-*                                         - 0: ap_mode
-*                                         - 1: sta_mode
-*
-*             physical_equipment_id     :(u8    )ESP8266当前所处实际设备的地址-->PHYSICAL EQUIPMENT CODES
-*
-*             ip[IP_STRING_LENGTH]      :(u8    )ESP8266当前的IP地址
-*                                         - 0123456789abcde    f 最长16位
-*                                         -"192.168.123.123"0x00
-*
-*             tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH]         
-*                                       :(u8    )TCP连接资源池
-*                                         - 0   1  23456789abcdefg   h 共18位
-*                                         -0/1 0/1"192.168.123.124"0x00
-*                                         -第1个字节表示该link id连接状态
-*                                         -第二个字节表示是否获得该linkID对应的实际设备码，
-*                                          同时用于标志是否获得IP地址-->PHYSICAL EQUIPMENT CODES
-*
-*********************************************************************************************************
-*/
-#define IP_STRING_LENGTH        16
-#define TCP_LINK_POOL           5
-#define TCP_STATUS_LENGTH       18
-typedef struct ESP8266_WORK_STATUS{
-    u8 ap_sta_mode;
-    u8 physical_equipment_id;
-    char ip[IP_STRING_LENGTH];
-    char tcp_status[TCP_LINK_POOL][TCP_STATUS_LENGTH];
-} ESP8266_WORK_STATUS_DEF;
-
 /*
 *********************************************************************************************************
 *                                     ESP8266_WORK_STATUS CODES
@@ -168,6 +133,14 @@ typedef struct ESP8266_WORK_STATUS{
 */
 #define TCP_LINKID_ALL                      5u
 
+//关闭所有TCP连接
 #define TCP_SEND_ACK_DATA_CODE_NONE         64u
+
+
+//工作组在线状态设置
+#define DROPPED         0
+#define SUSPEND         1
+#define READY           2
+#define STOP            3
 
 #endif

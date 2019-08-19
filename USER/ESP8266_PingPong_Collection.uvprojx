@@ -377,6 +377,56 @@
       </TargetOption>
       <Groups>
         <Group>
+          <GroupName>CONTROLLER</GroupName>
+          <Files>
+            <File>
+              <FileName>struct_define.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Controller\struct_define.h</FilePath>
+            </File>
+            <File>
+              <FileName>task_create.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\task_create.c</FilePath>
+            </File>
+            <File>
+              <FileName>work_group_init.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\work_group_init.c</FilePath>
+            </File>
+            <File>
+              <FileName>tcp_json_handle.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\tcp_json_handle.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp8266_work_status.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\esp8266_work_status.c</FilePath>
+            </File>
+            <File>
+              <FileName>work_group_status.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\work_group_status.c</FilePath>
+            </File>
+            <File>
+              <FileName>work_group_online_status.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\work_group_online_status.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp8266_common.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\esp8266_common.c</FilePath>
+            </File>
+            <File>
+              <FileName>error_handle.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Controller\error_handle.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>USER</GroupName>
           <Files>
             <File>
@@ -393,41 +443,6 @@
               <FileName>system_stm32f10x.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\system_stm32f10x.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>CONTROLLER</GroupName>
-          <Files>
-            <File>
-              <FileName>controller.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Controller\controller.c</FilePath>
-            </File>
-            <File>
-              <FileName>task_create.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Controller\task_create.c</FilePath>
-            </File>
-            <File>
-              <FileName>error_handle.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Controller\error_handle.c</FilePath>
-            </File>
-            <File>
-              <FileName>struct_define.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\Controller\struct_define.h</FilePath>
-            </File>
-            <File>
-              <FileName>tcp_json_handle.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Controller\tcp_json_handle.c</FilePath>
-            </File>
-            <File>
-              <FileName>esp8266_common.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Controller\esp8266_common.c</FilePath>
             </File>
           </Files>
         </Group>
